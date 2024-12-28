@@ -13,6 +13,14 @@ void upload_directory(int sock, const char *dir_path);
 void download_directory(int sock, const char *dir_name);
 void send_command(int sock, const char *command);
 int create_directories(const char *path);
+void rename_file(int sock);
+void delete_file(int sock);
+void move_file(int sock);
+void rename_directory(int sock);
+void delete_directory(int sock);
+void move_directory(int sock);
+
+
 
 int main()
 {
@@ -38,7 +46,7 @@ int main()
     int choice;
     int authenticated = 0;
 
-    while (1)
+     while (1)
     {
         if (!authenticated)
         {
@@ -61,7 +69,7 @@ int main()
         }
         else
         {
-            printf("\n1. Xem danh sách file\n2. Tạo thư mục\n3. Thay đổi thư mục\n4. Tải lên file\n5. Tải xuống file\n6. Tìm kiếm file\n7. Tải lên thư mục\n8. Tải xuống thư mục\n9. Đăng xuất\nLựa chọn: ");
+            printf("\n1. Xem danh sách file\n2. Tạo thư mục\n3. Thay đổi thư mục\n4. Tải lên file\n5. Tải xuống file\n6. Tìm kiếm file\n7. Tải lên thư mục\n8. Tải xuống thư mục\n9. Sửa tên file\n10. Xóa file\n11. Di chuyển file\n12. Sửa tên thư mục\n13. Xóa thư mục\n14. Di chuyển thư mục\n15. Đăng xuất\nLựa chọn: ");
             scanf("%d", &choice);
             getchar(); // Xóa ký tự newline
 
@@ -102,7 +110,25 @@ int main()
                 break;
             }
             case 9:
-                authenticated = 0;
+                rename_file(sock);
+                break;
+            case 10:
+                delete_file(sock);
+                break;
+            case 11:
+                move_file(sock);
+                break;
+            case 12:
+                rename_directory(sock);
+                break;
+            case 13:
+                delete_directory(sock);
+                break;
+            case 14:
+                move_directory(sock);
+                break;
+            case 15:
+                authenticated = 0; // Đăng xuất
                 break;
             default:
                 printf("Lựa chọn không hợp lệ.\n");
@@ -675,3 +701,152 @@ void search_files(int sock)
         printf("Đã tải xuống file %s.\n", choice);
     }
 }
+
+void rename_file(int sock)
+{
+    char old_name[BUFFER_SIZE], new_name[BUFFER_SIZE];
+    printf("Nhập tên file hiện tại: ");
+    scanf("%s", old_name);
+    printf("Nhập tên file mới: ");
+    scanf("%s", new_name);
+
+    send_command(sock, "RENAME_FILE");
+    send(sock, old_name, BUFFER_SIZE, 0);
+    send(sock, new_name, BUFFER_SIZE, 0);
+
+    char response[BUFFER_SIZE];
+    recv(sock, response, BUFFER_SIZE, 0);
+    if (strcmp(response, "RenameSuccess") == 0)
+    {
+        printf("Đổi tên file thành công.\n");
+    }
+    else
+    {
+        printf("Đổi tên file thất bại.\n");
+    }
+}
+void delete_file(int sock)
+{
+    char filename[BUFFER_SIZE];
+    printf("Nhập tên file cần xóa: ");
+    scanf("%s", filename);
+
+    send_command(sock, "DELETE_FILE");
+    send(sock, filename, BUFFER_SIZE, 0);
+
+    char response[BUFFER_SIZE];
+    recv(sock, response, BUFFER_SIZE, 0);
+    if (strcmp(response, "DeleteSuccess") == 0)
+    {
+        printf("Xóa file thành công.\n");
+    }
+    else
+    {
+        printf("Xóa file thất bại.\n");
+    }
+}
+void move_file(int sock)
+{
+    char filename[BUFFER_SIZE], destination[BUFFER_SIZE];
+    printf("Nhập tên file cần di chuyển: ");
+    scanf("%s", filename);
+    printf("Nhập đường dẫn đích: ");
+    scanf("%s", destination);
+
+    send_command(sock, "MOVE_FILE");
+    
+    if (send_all(sock, filename, BUFFER_SIZE) != 0)
+    {
+        printf("Lỗi khi gửi tên file.\n");
+        return;
+    }
+    if (send_all(sock, destination, BUFFER_SIZE) != 0)
+    {
+        printf("Lỗi khi gửi đường dẫn đích.\n");
+        return;
+    }
+
+    char response[BUFFER_SIZE];
+    if (recv_all(sock, response, BUFFER_SIZE) <= 0)
+    {
+        printf("Lỗi khi nhận phản hồi từ server.\n");
+        return;
+    }
+    if (strcmp(response, "MoveSuccess") == 0)
+    {
+        printf("Di chuyển file thành công.\n");
+    }
+    else
+    {
+        printf("Di chuyển file thất bại.\n");
+    }
+}
+
+void rename_directory(int sock)
+{
+    char old_dir[BUFFER_SIZE], new_dir[BUFFER_SIZE];
+    printf("Nhập tên thư mục hiện tại: ");
+    scanf("%s", old_dir);
+    printf("Nhập tên thư mục mới: ");
+    scanf("%s", new_dir);
+
+    send_command(sock, "RENAME_DIR");
+    send(sock, old_dir, BUFFER_SIZE, 0);
+    send(sock, new_dir, BUFFER_SIZE, 0);
+
+    char response[BUFFER_SIZE];
+    recv(sock, response, BUFFER_SIZE, 0);
+    if (strcmp(response, "RenameSuccess") == 0)
+    {
+        printf("Đổi tên thư mục thành công.\n");
+    }
+    else
+    {
+        printf("Đổi tên thư mục thất bại.\n");
+    }
+}
+void delete_directory(int sock)
+{
+    char dirname[BUFFER_SIZE];
+    printf("Nhập tên thư mục cần xóa: ");
+    scanf("%s", dirname);
+
+    send_command(sock, "DELETE_DIR");
+    send(sock, dirname, BUFFER_SIZE, 0);
+
+    char response[BUFFER_SIZE];
+    recv(sock, response, BUFFER_SIZE, 0);
+    if (strcmp(response, "DeleteSuccess") == 0)
+    {
+        printf("Xóa thư mục thành công.\n");
+    }
+    else
+    {
+        printf("Xóa thư mục thất bại.\n");
+    }
+}
+void move_directory(int sock)
+{
+    char dirname[BUFFER_SIZE], destination[BUFFER_SIZE];
+    printf("Nhập tên thư mục cần di chuyển: ");
+    scanf("%s", dirname);
+    printf("Nhập đường dẫn đích: ");
+    scanf("%s", destination);
+
+    send_command(sock, "MOVE_DIR");
+    send(sock, dirname, BUFFER_SIZE, 0);
+    send(sock, destination, BUFFER_SIZE, 0);
+
+    char response[BUFFER_SIZE];
+    recv(sock, response, BUFFER_SIZE, 0);
+    if (strcmp(response, "MoveSuccess") == 0)
+    {
+        printf("Di chuyển thư mục thành công.\n");
+    }
+    else
+    {
+        printf("Di chuyển thư mục thất bại.\n");
+    }
+}
+
+
