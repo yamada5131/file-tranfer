@@ -1,5 +1,6 @@
 #include "common.h"
 #include <errno.h>
+#include <libgen.h> 
 
 char current_username[BUFFER_SIZE];
 char current_directory[BUFFER_SIZE];
@@ -20,6 +21,14 @@ void receive_directory(int client_sock);
 void handle_client(int client_sock);
 void send_response(int client_sock, const char *message);
 int create_directories(const char *path);
+
+void rename_file_server(int client_sock);
+void delete_file_server(int client_sock);
+void move_file_server(int client_sock);
+void rename_directory_server(int client_sock);
+void delete_directory_server(int client_sock);
+void move_directory_server(int client_sock);
+int remove_directory(const char *path);
 
 int main()
 {
@@ -170,6 +179,30 @@ void handle_client(int client_sock)
             else if (strcmp(command, "UPLOAD_DIR") == 0)
             {
                 receive_directory(client_sock);
+            }
+            else if (strcmp(command, "RENAME_FILE") == 0)
+            {
+                rename_file_server(client_sock);
+            }
+            else if (strcmp(command, "DELETE_FILE") == 0)
+            {
+                delete_file_server(client_sock);
+            }
+            else if (strcmp(command, "MOVE_FILE") == 0)
+            {
+                move_file_server(client_sock);
+            }
+            else if (strcmp(command, "RENAME_DIR") == 0)
+            {
+                rename_directory_server(client_sock);
+            }
+            else if (strcmp(command, "DELETE_DIR") == 0)
+            {
+                delete_directory_server(client_sock);
+            }
+            else if (strcmp(command, "MOVE_DIR") == 0)
+            {
+                move_directory_server(client_sock);
             }
             else
             {
@@ -497,7 +530,6 @@ void change_directory(int client_sock)
         printf("Không thể chuyển đến thư mục: %s\n", dirname);
     }
 }
-
 void receive_file(int client_sock)
 {
     char filename[BUFFER_SIZE];
@@ -641,4 +673,201 @@ void search_in_directory(const char *dir_path, const char *query, char *results)
         }
     }
     closedir(d);
+}
+
+void rename_file_server(int client_sock)
+{
+    char old_name[BUFFER_SIZE], new_name[BUFFER_SIZE];
+    recv(client_sock, old_name, BUFFER_SIZE, 0);
+    recv(client_sock, new_name, BUFFER_SIZE, 0);
+
+    if (rename(old_name, new_name) == 0)
+    {
+        send_response(client_sock, "RenameSuccess");
+        printf("Đã đổi tên file %s thành %s.\n", old_name, new_name);
+    }
+    else
+    {
+        send_response(client_sock, "RenameFailed");
+        printf("Không thể đổi tên file %s.\n", old_name);
+    }
+}
+
+
+void delete_file_server(int client_sock)
+{
+    char filename[BUFFER_SIZE];
+    recv(client_sock, filename, BUFFER_SIZE, 0);
+
+    if (remove(filename) == 0)
+    {
+        send_response(client_sock, "DeleteSuccess");
+        printf("Đã xóa file %s.\n", filename);
+    }
+    else
+    {
+        send_response(client_sock, "DeleteFailed");
+        printf("Không thể xóa file %s.\n", filename);
+    }
+}
+
+
+void move_file_server(int client_sock)
+{
+    char filename[BUFFER_SIZE], destination[BUFFER_SIZE];
+    
+    if (recv_all(client_sock, filename, BUFFER_SIZE) < 0)
+    {
+        send_response(client_sock, "MoveFailed");
+        printf("Lỗi khi nhận tên file.\n");
+        return;
+    }
+
+    if (recv_all(client_sock, destination, BUFFER_SIZE) < 0)
+    {
+        send_response(client_sock, "MoveFailed");
+        printf("Lỗi khi nhận đường dẫn đích.\n");
+        return;
+    }
+
+    // Kiểm tra sự tồn tại của thư mục đích
+    struct stat st;
+    if (stat(destination, &st) == -1 || !S_ISDIR(st.st_mode))
+    {
+        send_response(client_sock, "MoveFailed");
+        printf("Thư mục đích %s không tồn tại hoặc không phải là thư mục.\n", destination);
+        return;
+    }
+
+    // Tạo đường dẫn đích đầy đủ
+    char dest_path[BUFFER_SIZE];
+    snprintf(dest_path, BUFFER_SIZE, "%s/%s", destination, basename(filename));
+
+    // Thực hiện di chuyển file
+    if (rename(filename, dest_path) == 0)
+    {
+        send_response(client_sock, "MoveSuccess");
+        printf("Đã di chuyển file %s đến %s.\n", filename, dest_path);
+    }
+    else
+    {
+        send_response(client_sock, "MoveFailed");
+        perror("rename");
+        printf("Không thể di chuyển file %s đến %s.\n", filename, dest_path);
+    }
+}
+
+
+void rename_directory_server(int client_sock)
+{
+    char old_dir[BUFFER_SIZE], new_dir[BUFFER_SIZE];
+    recv(client_sock, old_dir, BUFFER_SIZE, 0);
+    recv(client_sock, new_dir, BUFFER_SIZE, 0);
+
+    if (rename(old_dir, new_dir) == 0)
+    {
+        send_response(client_sock, "RenameSuccess");
+        printf("Đã đổi tên thư mục %s thành %s.\n", old_dir, new_dir);
+    }
+    else
+    {
+        send_response(client_sock, "RenameFailed");
+        printf("Không thể đổi tên thư mục %s.\n", old_dir);
+    }
+}
+
+int remove_directory(const char *path)
+{
+    DIR *d = opendir(path);
+    size_t path_len = strlen(path);
+    int r = 0;
+
+    if (d)
+    {
+        struct dirent *p;
+        while (!r && (p = readdir(d)))
+        {
+            // Bỏ qua các thư mục hiện tại và thư mục cha
+            if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+                continue;
+
+            char *buf;
+            size_t len = path_len + strlen(p->d_name) + 2;
+            buf = malloc(len);
+            if (buf)
+            {
+                snprintf(buf, len, "%s/%s", path, p->d_name);
+
+                struct stat statbuf;
+                if (!stat(buf, &statbuf))
+                {
+                    if (S_ISDIR(statbuf.st_mode))
+                        r = remove_directory(buf); // Đệ quy xóa thư mục con
+                    else
+                        r = unlink(buf); // Xóa file
+                }
+                free(buf);
+            }
+        }
+        closedir(d);
+    }
+
+    if (!r)
+        r = rmdir(path); // Xóa thư mục sau khi đã xóa hết nội dung bên trong
+
+    return r;
+}
+void delete_directory_server(int client_sock)
+{
+    char dirname[BUFFER_SIZE];
+    if (recv_all(client_sock, dirname, BUFFER_SIZE) < 0)
+    {
+        send_response(client_sock, "DeleteFailed");
+        printf("Lỗi khi nhận tên thư mục.\n");
+        return;
+    }
+
+    // Kiểm tra sự tồn tại của thư mục
+    struct stat st;
+    if (stat(dirname, &st) == -1 || !S_ISDIR(st.st_mode))
+    {
+        send_response(client_sock, "DeleteFailed");
+        printf("Thư mục %s không tồn tại hoặc không phải là thư mục.\n", dirname);
+        return;
+    }
+
+    // Thực hiện xóa thư mục đệ quy
+    if (remove_directory(dirname) == 0)
+    {
+        send_response(client_sock, "DeleteSuccess");
+        printf("Đã xóa thư mục %s và tất cả nội dung bên trong.\n", dirname);
+    }
+    else
+    {
+        send_response(client_sock, "DeleteFailed");
+        perror("remove_directory");
+        printf("Không thể xóa thư mục %s.\n", dirname);
+    }
+}
+
+void move_directory_server(int client_sock)
+{
+    char dirname[BUFFER_SIZE], destination[BUFFER_SIZE];
+    recv(client_sock, dirname, BUFFER_SIZE, 0);
+    recv(client_sock, destination, BUFFER_SIZE, 0);
+
+    // Tạo đường dẫn đích đầy đủ
+    char dest_path[BUFFER_SIZE];
+    snprintf(dest_path, BUFFER_SIZE, "%s/%s", destination, basename(dirname));
+
+    if (rename(dirname, dest_path) == 0)
+    {
+        send_response(client_sock, "MoveSuccess");
+        printf("Đã di chuyển thư mục %s đến %s.\n", dirname, dest_path);
+    }
+    else
+    {
+        send_response(client_sock, "MoveFailed");
+        printf("Không thể di chuyển thư mục %s.\n", dirname);
+    }
 }
