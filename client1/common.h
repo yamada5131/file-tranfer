@@ -15,7 +15,7 @@
 #include <unistd.h>
 
 #define BUFFER_SIZE 1024
-#define PORT 8088
+#define PORT 8089
 
 void handle_error(const char *message);
 int send_all(int sock, const void *buffer, size_t length);
