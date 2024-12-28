@@ -457,18 +457,35 @@ void change_directory(int sock)
     printf("Nhập tên thư mục cần chuyển đến: ");
     scanf("%s", dirname);
 
+    // Clear input buffer
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF)
+        ;
+
+    // Send CD command to server
     send_command(sock, "CD");
     send(sock, dirname, BUFFER_SIZE, 0);
 
+    // Get server response
     char response[BUFFER_SIZE];
     recv(sock, response, BUFFER_SIZE, 0);
+
+    // Handle different response types
     if (strcmp(response, "DirectoryChanged") == 0)
     {
-        printf("Chuyển thư mục thành công.\n");
+        printf("Chuyển đến thư mục '%s' thành công.\n", dirname);
+    }
+    else if (strcmp(response, "AccessDenied") == 0)
+    {
+        printf("Không thể truy cập thư mục '%s'. Bạn chỉ có thể di chuyển trong thư mục của mình.\n", dirname);
+    }
+    else if (strcmp(response, "DirectoryChangeFailed") == 0)
+    {
+        printf("Không thể chuyển đến thư mục '%s'. Thư mục không tồn tại hoặc không có quyền truy cập.\n", dirname);
     }
     else
     {
-        printf("Chuyển thư mục thất bại.\n");
+        printf("Lỗi không xác định khi chuyển thư mục.\n");
     }
 }
 

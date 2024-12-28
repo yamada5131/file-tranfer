@@ -388,30 +388,37 @@ int login_user(int client_sock)
             break;
         }
     }
+    fclose(fp);
 
     if (authenticated)
     {
         strcpy(current_username, username);
-        char base_path[BUFFER_SIZE];
-        snprintf(base_path, BUFFER_SIZE, "data/%s", current_username);
 
-        // Create full directory path including username
+        // Tạo và chuyển đến thư mục của user
+        char base_path[BUFFER_SIZE];
+        char *pwd = getenv("PWD");
+        snprintf(base_path, BUFFER_SIZE, "%s/data/%s", pwd, username);
+
         if (create_directories(base_path) != 0)
         {
-            printf("Không thể tạo thư mục %s.\n", base_path);
-            return -1;
+            printf("Không thể tạo thư mục: %s\n", base_path);
+            return 0;
         }
 
-        printf("Đã đăng nhập người dùng %s.\n", current_username);
-        strcpy(current_directory, base_path);
-        if (chdir(current_directory) != 0)
+        if (chdir(base_path) != 0)
         {
-            printf("Không thể chuyển đến thư mục %s.\n", current_directory);
-            return -1;
+            printf("Không thể chuyển đến thư mục: %s\n", base_path);
+            return 0;
         }
-        printf("Đã chuyển đến thư mục %s.\n", current_directory);
+
+        strcpy(current_directory, base_path);
+        printf("Đã đăng nhập user: %s\nThư mục hiện tại: %s\n", username, base_path);
         send_response(client_sock, "LoginSuccess");
+        return 1;
     }
+
+    send_response(client_sock, "LoginFailed");
+    return 0;
 }
 
 // Hàm liệt kê file
@@ -454,13 +461,40 @@ void change_directory(int client_sock)
 {
     char dirname[BUFFER_SIZE];
     recv(client_sock, dirname, BUFFER_SIZE, 0);
+
+    // Lấy đường dẫn hiện tại trước khi thay đổi
+    char current_path[BUFFER_SIZE];
+    getcwd(current_path, BUFFER_SIZE);
+
+    // Thử chuyển đến thư mục mới
     if (chdir(dirname) == 0)
     {
-        send_response(client_sock, "DirectoryChanged");
+        // Lấy đường dẫn mới sau khi chuyển
+        char new_path[BUFFER_SIZE];
+        getcwd(new_path, BUFFER_SIZE);
+
+        // Lấy đường dẫn gốc của user
+        char base_path[BUFFER_SIZE];
+        snprintf(base_path, BUFFER_SIZE, "%s/data/%s", getenv("PWD"), current_username);
+
+        // Kiểm tra xem đường dẫn mới có bắt đầu bằng thư mục gốc của user không
+        if (strstr(new_path, base_path) != NULL)
+        {
+            send_response(client_sock, "DirectoryChanged");
+            printf("Chuyển đến thư mục: %s\n", new_path);
+        }
+        else
+        {
+            // Nếu ra khỏi thư mục của user, quay lại thư mục cũ
+            chdir(current_path);
+            send_response(client_sock, "AccessDenied");
+            printf("Từ chối truy cập: %s\n", new_path);
+        }
     }
     else
     {
         send_response(client_sock, "DirectoryChangeFailed");
+        printf("Không thể chuyển đến thư mục: %s\n", dirname);
     }
 }
 
