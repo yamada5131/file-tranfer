@@ -2,8 +2,9 @@
 
 CC = gcc
 CFLAGS = -Wall -g  # Thêm cờ -g để hỗ trợ debug
-DEPS = common.h
-OBJ = server.o functions.o
+LDFLAGS = -lssl -lcrypto  # Thêm các thư viện OpenSSL cần thiết
+DEPS = common.h sha256_utils.h
+OBJ = server.o functions.o sha256_utils.o
 
 all: server
 
@@ -11,7 +12,7 @@ all: server
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 server: $(OBJ)
-	$(CC) -o $@ $^ $(CFLAGS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
 clean:
 	rm -f *.o server

@@ -1,6 +1,7 @@
 #include "common.h"
 #include <errno.h>
 #include <libgen.h> 
+#include "sha256_utils.h"
 
 char current_username[BUFFER_SIZE];
 char current_directory[BUFFER_SIZE];
@@ -223,6 +224,7 @@ void send_response(int client_sock, const char *message)
     send(client_sock, message, BUFFER_SIZE, 0);
 }
 
+// Sửa đổi hàm receive_directory
 void receive_directory(int client_sock)
 {
     char command[BUFFER_SIZE];
@@ -244,9 +246,6 @@ void receive_directory(int client_sock)
             char dirname[BUFFER_SIZE];
             recv(client_sock, dirname, BUFFER_SIZE, 0);
 
-            // char full_path[BUFFER_SIZE];
-            // snprintf(full_path, BUFFER_SIZE, "%s/%s", current_username, dirname);
-
             if (create_directories(dirname) == 0)
             {
                 printf("Đã tạo thư mục %s.\n", dirname);
@@ -262,10 +261,14 @@ void receive_directory(int client_sock)
         {
             receive_file(client_sock);
         }
+        else if (strcmp(command, "UPLOAD_DIR") == 0)
+        {
+            receive_directory(client_sock);
+        }
     }
 }
 
-// Hàm gửi thư mục tới máy khách
+// Sửa đổi hàm send_directory
 void send_directory(int client_sock, const char *dir_path, int is_top_level)
 {
     DIR *d = opendir(dir_path);
@@ -346,6 +349,17 @@ void send_directory(int client_sock, const char *dir_path, int is_top_level)
             }
             fclose(fp);
             printf("Đã gửi file %s tới máy khách.\n", path);
+
+            // Tính toán hash SHA-256 của tệp
+            char file_hash[65];
+            if (compute_file_sha256(path, file_hash) != 0)
+            {
+                printf("Lỗi khi tính toán hash.\n");
+                return;
+            }
+
+            // Gửi hash đến client
+            send(client_sock, file_hash, 64, 0);
         }
     }
     closedir(d);
@@ -368,7 +382,7 @@ void register_user(int client_sock)
     FILE *fp = fopen("users.txt", "a+");
     if (!fp)
     {
-        send_response(client_sock, "Không thể mở file người dùng.");
+        send_response(client_sock, "CannotOpenUserFile");
         return;
     }
 
@@ -390,7 +404,12 @@ void register_user(int client_sock)
     }
     else
     {
-        fprintf(fp, "%s %s\n", username, password);
+        // Mã hóa mật khẩu sử dụng SHA-256
+        char password_hash[65];
+        compute_buffer_sha256((unsigned char *)password, strlen(password), password_hash);
+
+        // Lưu trữ username và password_hash
+        fprintf(fp, "%s %s\n", username, password_hash);
         send_response(client_sock, "RegisterSuccess");
     }
     fclose(fp);
@@ -406,18 +425,26 @@ int login_user(int client_sock)
     FILE *fp = fopen("users.txt", "r");
     if (!fp)
     {
-        send_response(client_sock, "Không thể mở file người dùng.");
+        send_response(client_sock, "CannotOpenUserFile");
         return 0;
     }
 
-    char line[BUFFER_SIZE], stored_user[BUFFER_SIZE], stored_pass[BUFFER_SIZE];
+    char line[BUFFER_SIZE], stored_user[BUFFER_SIZE], stored_hash[BUFFER_SIZE];
     int authenticated = 0;
     while (fgets(line, sizeof(line), fp))
     {
-        sscanf(line, "%s %s", stored_user, stored_pass);
-        if (strcmp(username, stored_user) == 0 && strcmp(password, stored_pass) == 0)
+        sscanf(line, "%s %s", stored_user, stored_hash);
+        if (strcmp(username, stored_user) == 0)
         {
-            authenticated = 1;
+            // Mã hóa mật khẩu nhập vào
+            char password_hash[65];
+            compute_buffer_sha256((unsigned char *)password, strlen(password), password_hash);
+
+            // So sánh hash
+            if (strcmp(password_hash, stored_hash) == 0)
+            {
+                authenticated = 1;
+            }
             break;
         }
     }
@@ -434,18 +461,18 @@ int login_user(int client_sock)
 
         if (create_directories(base_path) != 0)
         {
-            printf("Không thể tạo thư mục: %s\n", base_path);
+            printf("Cannot create directory: %s\n", base_path);
             return 0;
         }
 
         if (chdir(base_path) != 0)
         {
-            printf("Không thể chuyển đến thư mục: %s\n", base_path);
+            printf("Cannot change to directory: %s\n", base_path);
             return 0;
         }
 
         strcpy(current_directory, base_path);
-        printf("Đã đăng nhập user: %s\nThư mục hiện tại: %s\n", username, base_path);
+        printf("User logged in: %s\nCurrent directory: %s\n", username, base_path);
         send_response(client_sock, "LoginSuccess");
         return 1;
     }
@@ -530,6 +557,8 @@ void change_directory(int client_sock)
         printf("Không thể chuyển đến thư mục: %s\n", dirname);
     }
 }
+//fix1
+// Sửa đổi hàm receive_file
 void receive_file(int client_sock)
 {
     char filename[BUFFER_SIZE];
@@ -586,7 +615,38 @@ void receive_file(int client_sock)
     }
     fclose(fp);
     printf("Đã nhận file %s từ máy khách.\n", filename);
-    send_response(client_sock, "UploadSuccess");
+
+    // Nhận hash từ client
+    char received_hash[65];
+    memset(received_hash, 0, sizeof(received_hash));
+    if (recv_all(client_sock, received_hash, 64) <= 0)
+    {
+        printf("Lỗi khi nhận hash từ máy khách.\n");
+        send_response(client_sock, "UploadFailed");
+        return;
+    }
+    received_hash[64] = '\0'; // Kết thúc chuỗi
+
+    // Tính toán hash SHA-256 của tệp đã nhận
+    char computed_hash[65];
+    if (compute_file_sha256(filename, computed_hash) != 0)
+    {
+        printf("Lỗi khi tính toán hash.\n");
+        send_response(client_sock, "UploadFailed");
+        return;
+    }
+
+    // So sánh các hash
+    if (strcmp(received_hash, computed_hash) == 0)
+    {
+        send_response(client_sock, "UploadSuccess");
+        printf("Hash xác minh thành công cho file %s.\n", filename);
+    }
+    else
+    {
+        send_response(client_sock, "UploadFailed");
+        printf("Hash xác minh thất bại cho file %s.\n", filename);
+    }
 }
 
 // Hàm gửi file tới máy khách (DOWNLOAD)
@@ -631,6 +691,17 @@ void send_file(int client_sock)
     }
     fclose(fp);
     printf("Đã gửi file %s tới máy khách.\n", filename);
+
+    // Tính toán hash SHA-256 của tệp
+    char file_hash[65];
+    if (compute_file_sha256(filename, file_hash) != 0)
+    {
+        printf("Lỗi khi tính toán hash.\n");
+        return;
+    }
+
+    // Gửi hash đến client
+    send(client_sock, file_hash, 64, 0);
 }
 
 // Hàm tìm kiếm file
