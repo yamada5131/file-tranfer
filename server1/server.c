@@ -1,6 +1,7 @@
 #include "common.h"
 #include <errno.h>
 #include <libgen.h> 
+#include <sys/file.h>
 #include "sha256_utils.h"
 
 char current_username[BUFFER_SIZE];
@@ -410,6 +411,23 @@ void register_user(int client_sock)
         return;
     }
 
+ // Lấy descriptor của tệp
+    int fd = fileno(fp);
+    if (fd == -1)
+    {
+        send_response(client_sock, "FileDescriptorError");
+        fclose(fp);
+        return;
+    }
+
+    // Thiết lập khóa ghi (exclusive lock)
+    if (flock(fd, LOCK_EX) == -1)
+    {
+        send_response(client_sock, "LockFailed");
+        fclose(fp);
+        return;
+    }
+
     char line[BUFFER_SIZE], stored_user[BUFFER_SIZE];
     int exists = 0;
     while (fgets(line, sizeof(line), fp))
@@ -436,6 +454,16 @@ void register_user(int client_sock)
         fprintf(fp, "%s %s\n", username, password_hash);
         send_response(client_sock, "RegisterSuccess");
     }
+    // printf("\nNhập số bất kì để mở khóa file\n ");
+    //  int abc;
+    //         scanf("%d", &abc);
+     // Bỏ khóa và đóng tệp
+    if (flock(fd, LOCK_UN) == -1)
+    {
+        // Không thể bỏ khóa, tuy nhiên tệp đã được xử lý
+        perror("flock unlock failed");
+    }
+    // printf("\nĐã mở khóa file\n ");
     fclose(fp);
 }
 
@@ -450,6 +478,23 @@ int login_user(int client_sock)
     if (!fp)
     {
         send_response(client_sock, "CannotOpenUserFile");
+        return 0;
+    }
+
+ // Lấy descriptor của tệp
+    int fd = fileno(fp);
+    if (fd == -1)
+    {
+        send_response(client_sock, "FileDescriptorError");
+        fclose(fp);
+        return 0;
+    }
+
+    // Thiết lập khóa đọc (shared lock)
+    if (flock(fd, LOCK_SH) == -1)
+    {
+        send_response(client_sock, "LockFailed");
+        fclose(fp);
         return 0;
     }
 
@@ -472,7 +517,14 @@ int login_user(int client_sock)
             break;
         }
     }
+    // Bỏ khóa và đóng tệp
+    if (flock(fd, LOCK_UN) == -1)
+    {
+        perror("flock unlock failed");
+    }
     fclose(fp);
+
+    
 
     if (authenticated)
     {
