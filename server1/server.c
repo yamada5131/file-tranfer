@@ -5,6 +5,7 @@
 
 char current_username[BUFFER_SIZE];
 char current_directory[BUFFER_SIZE];
+char main_dir[BUFFER_SIZE];
 
 void register_user(int client_sock);
 int login_user(int client_sock);
@@ -64,6 +65,9 @@ int main()
         handle_error("Lắng nghe thất bại.");
 
     printf("Máy chủ đang lắng nghe trên cổng %d...\n", PORT);
+
+    if (getcwd(main_dir, BUFFER_SIZE) == NULL)
+        handle_error("Không thể lấy đường dẫn hiện tại.");
 
     while (1)
     {
@@ -204,6 +208,26 @@ void handle_client(int client_sock)
             else if (strcmp(command, "MOVE_DIR") == 0)
             {
                 move_directory_server(client_sock);
+            }
+            else if (strcmp(command, "Logout") == 0)
+            {
+                // Xử lý lệnh Logout
+                send_response(client_sock, "LogoutSuccess");
+                printf("User %s đã đăng xuất.\n", current_username);
+
+                // Reset thông tin người dùng
+                strcpy(current_username, "");
+                strcpy(current_directory, main_dir); // Đặt lại thư mục chính
+
+                // Chuyển về thư mục chính
+                if (chdir(main_dir) != 0)
+                {
+                    printf("Không thể chuyển về thư mục chính.\n");
+                }
+
+                authenticated = 0; // Đặt lại trạng thái không xác thực
+
+                printf("Current directory: %s\n", main_dir);
             }
             else
             {

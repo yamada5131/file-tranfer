@@ -129,8 +129,30 @@ int main()
                 move_directory(sock);
                 break;
             case 15:
-                authenticated = 0; // Đăng xuất
-                break;
+                {
+                    // Gửi lệnh "Logout" tới server
+                    send_command(sock, "Logout");
+
+                    // Nhận phản hồi từ server
+                    char response[BUFFER_SIZE];
+                    if (recv_all(sock, response, BUFFER_SIZE) <= 0)
+                    {
+                        printf("Lỗi khi nhận phản hồi từ server.\n");
+                        break;
+                    }
+
+                    if (strcmp(response, "LogoutSuccess") == 0)
+                    {
+                        printf("Đăng xuất thành công.\n");
+                        authenticated = 0; // Đặt trạng thái không xác thực
+                    }
+                    else
+                    {
+                        printf("Đăng xuất thất bại.\n");
+                    }
+                    break;
+                }
+                
             default:
                 printf("Lựa chọn không hợp lệ.\n");
             }
